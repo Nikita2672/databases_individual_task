@@ -1,0 +1,47 @@
+@startuml
+hide empty members
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+
+class "objects" as Objects {
+  objectId: string
+  operations: Operation[]
+}
+
+class "Operation" as Operation {
+  opId: string
+  txId: string
+  objectId: string
+  replicaId: string
+  clock: VectorClock
+  action: Action
+}
+
+class "VectorClock" as VectorClock {
+  replicaId -> counter
+}
+
+class "Action" as Action {
+  type: string
+  path?: (string | number)[]
+  value?: primitive | ref
+  index?: number
+}
+
+Objects *-- "0..*" Operation : operations
+Operation *-- VectorClock : clock
+Operation *-- Action : action
+
+note right of Objects
+One MongoDB document
+stores one object and its
+embedded operation history.
+end note
+
+note right of Action
+Concrete fields depend on
+the action subtype from
+the library contract.
+end note
+
+@enduml

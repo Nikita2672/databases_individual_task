@@ -1,17 +1,17 @@
 # MongoDB Storage Sandbox
 
-This environment starts a standalone MongoDB instance for document-oriented modeling of CRDT operation logs.
+Данный раздел описывает автономное окружение MongoDB, используемое для документно-ориентированного моделирования данных библиотеки `@gvsem/epistyl`.
 
 ## Start
 
 ```bash
-docker compose -f infra/mongodb/compose.yaml up -d
+docker compose -f mongodb/compose.yaml up -d
 ```
 
 ## Stop
 
 ```bash
-docker compose -f infra/mongodb/compose.yaml down
+docker compose -f mongodb/compose.yaml down
 ```
 
 ## Connection
@@ -24,16 +24,422 @@ docker compose -f infra/mongodb/compose.yaml down
 
 ## Collections
 
-- `replicas`
+В текущем варианте используются следующие коллекции:
+
 - `objects`
+
+MongoDB-инициализация коллекций и индексов задается в `initdb/001_init.js`.
+
+## Review Plan
+
+Данный файл используется как основа отчетного описания MongoDB-части задания.
+
+### Текущий статус
+
+- `DONE`: выбран вариант `one object = one document with embedded operations`
+- `DONE`: схема приведена в соответствие с фактическим контрактом библиотеки
+- `DONE`: исключены поля, отсутствующие в модели `Operation`
+- `DONE`: подготовлен генератор данных под выбранную MongoDB-модель
+- `DONE`: коллекция заполнена тестовыми данными
+- `DONE`: выполнен `explain("executionStats")` для основных запросов
+- `DONE`: сформулированы предварительные выводы по MongoDB
+
+## 1. Goal And Scope
+
+MongoDB рассматривается как документно-ориентированная альтернатива PostgreSQL для хранения данных библиотеки `@gvsem/epistyl`. Если в варианте PostgreSQL акцент делался на реляционной декомпозиции журнала операций, то в MongoDB интерес представляет возможность хранения истории конкретного объекта в виде единого документа.
+
+Важное методологическое ограничение данного раздела состоит в том, что модель MongoDB должна в точности соответствовать фактическому контракту библиотеки. Следовательно, в схему не должны вводиться поля, отсутствующие в библиотечных типах, если они не являются строго необходимыми техническими идентификаторами MongoDB.
+
+## 2. Library Contract
+
+Согласно фактическим типам библиотеки, операция имеет следующую структуру:
+
+- `opId`
+- `txId`
+- `objectId`
+- `replicaId`
+- `clock`
+- `action`
+
+Поле `clock` имеет тип `VectorClock`, то есть отображение:
+
+- `replicaId -> counter`
+
+Поле `action` имеет тип `Action` и может принимать одно из следующих значений:
+
+- `field.set`
+- `field.delete`
+- `set.add`
+- `set.remove`
+- `array.insert`
+- `array.remove`
+- `node.initObject`
+- `node.initSet`
+- `node.initArray`
+
+Следовательно, любые дополнительные поля наподобие `wallTime`, `actionType`, `actionPath`, `dependencies`, `createdBy` или `objectType` не относятся к библиотечному контракту и не должны входить в базовую MongoDB-модель данного раздела.
+
+## 3. Key Difference From PostgreSQL
+
+Ключевое отличие MongoDB-варианта от PostgreSQL состоит не в структуре самой операции, а в выборе единицы хранения.
+
+В PostgreSQL:
+
+- операция являлась основной единицей хранения;
+- операции сохранялись как независимые строки таблицы `operations`.
+
+В MongoDB:
+
+- корневой объект является основной единицей хранения;
+- операции сохраняются как встроенный массив внутри документа объекта.
+
+Таким образом, библиотечный контракт операции остается тем же самым, а меняется только способ агрегирования данных в хранилище.
+
+## 4. Chosen Document Model
+
+Для текущего этапа принята модель `one object = one document with embedded operations`.
+
+Документ коллекции `objects` содержит только те поля, которые непосредственно следуют из библиотеки или необходимы для организации хранения:
+
+- `objectId`
 - `operations`
-- `snapshots`
 
-The initialization script creates collection validators and indexes for common access patterns:
+Поле `operations` представляет собой массив документов, каждый из которых в точности соответствует типу `Operation`:
 
-- unique operation lookup
-- per-replica sequence validation
-- per-object operation history
-- snapshot retrieval by object and version
+- `opId`
+- `txId`
+- `objectId`
+- `replicaId`
+- `clock`
+- `action`
 
-The initialization script lives in `initdb/001_init.js`.
+Такое проектирование позволяет хранить историю одного объекта локально внутри одного документа без добавления доменных полей, отсутствующих в библиотеке.
+
+## 5. Logical Data Model
+
+Логическая модель MongoDB в данном варианте сводится к одной основной сущности хранения:
+
+- `ObjectDocument`
+
+Сущность `ObjectDocument` объединяет:
+
+- идентификатор объекта;
+- встроенную историю операций данного объекта.
+
+Операция в этом варианте не является top-level документом коллекции, но сохраняет ту же структуру, что и в библиотеке. Иными словами, операция перестает быть самостоятельной единицей хранения, однако не изменяется по своему содержимому.
+
+## 6. Physical Collection Design
+
+В текущей физической реализации используется одна коллекция:
+
+- `objects`
+
+Каждый документ коллекции `objects` имеет вид:
+
+- `objectId: string`
+- `operations: Operation[]`
+
+Каждый элемент массива `operations` валидируется по структуре библиотечного типа `Operation`.
+
+### 6.1 Operation Shape In MongoDB
+
+Внутри массива `operations` каждая операция содержит:
+
+- `opId: string`
+- `txId: string`
+- `objectId: string`
+- `replicaId: string`
+- `clock: object`
+- `action: object`
+
+На уровне MongoDB-валидации дополнительно фиксируется только то, что:
+
+- `clock` хранится как документ;
+- `action` хранится как документ;
+- внутри `action` присутствует поле `type`.
+
+Более строгая проверка конкретной структуры `action` по ее виду остается ответственностью прикладного уровня, как и в PostgreSQL-варианте.
+
+## 7. Document Schema Diagram
+
+Для MongoDB-варианта более уместна не классическая ER-диаграмма, а диаграмма структуры документа. Это связано с тем, что единицей хранения является не отдельная операция, а документ объекта со встроенным массивом операций.
+
+![MongoDB Document Schema](./resources/diagram.png)
+
+На диаграмме должны быть отражены:
+
+- коллекция `objects`;
+- поле верхнего уровня `objectId`;
+- массив `operations`;
+- структура одного элемента `operations[]`, соответствующая библиотечному типу `Operation`;
+- вложенные поля `clock` и `action` как документные структуры.
+
+На представленной диаграмме верхний уровень соответствует одному документу коллекции `objects`. Внутри него хранится идентификатор объекта и массив `operations`, содержащий встроенную историю изменений. Каждый элемент массива соответствует библиотечному типу `Operation` и включает идентификаторы операции и транзакции, идентификатор объекта, идентификатор реплики, векторные часы и сериализованное действие.
+
+Поле `clock` на диаграмме отражено как вложенная документная структура вида `replicaId -> counter`, что соответствует библиотечному типу `VectorClock`. Поле `action` также сохраняется как вложенный документ, причем его точная внутренняя структура определяется конкретным видом действия из библиотечного типа `Action`.
+
+Такая форма визуализации лучше отражает фактическую документную модель MongoDB и одновременно подчеркивает ключевое отличие от PostgreSQL, где операция выступает самостоятельной единицей хранения. В MongoDB же основной единицей хранения является документ объекта, а операции существуют как встроенные элементы его истории.
+
+Артефакты раздела:
+
+- `resources/schema.puml` — исходник диаграммы структуры документа в `PlantUML`
+- `resources/diagram.png` — экспортированное изображение диаграммы структуры документа
+
+## 8. Why This Model Is Worth Considering
+
+Рассмотрение MongoDB в данном варианте оправдано по следующим причинам:
+
+- структура `clock` и `action` естественным образом представима в виде вложенных документов;
+- история конкретного объекта может храниться локально без отдельной коллекции операций;
+- сравнение с PostgreSQL становится содержательным: сопоставляются не только две СУБД, но и две разные единицы хранения одного и того же библиотечного контракта.
+
+Следовательно, MongoDB в данной постановке полезно рассматривать как объектно-ориентированную альтернативу реляционному append-only журналу.
+
+## 9. Expected Advantages
+
+Ожидаемые преимущества выбранного MongoDB-подхода:
+
+- естественное хранение полуструктурированных полей `clock` и `action`;
+- удобство чтения полной истории конкретного объекта из одного документа;
+- отсутствие необходимости разбивать библиотечную операцию на отдельные реляционные элементы;
+- минимальное отклонение от фактической формы данных библиотеки.
+
+## 10. Expected Limitations
+
+Наряду с преимуществами данная модель имеет существенные ограничения:
+
+- документ MongoDB ограничен размером `16 MB`, поэтому история одного объекта не может расти неограниченно;
+- большие массивы `operations` делают обновление объектного документа более дорогим;
+- выборки по операциям сразу через все объекты становятся менее естественными, чем в модели, где операция хранится отдельно;
+- при очень длинной истории объекта может потребоваться переход к другой документной стратегии, например к сегментации истории по нескольким документам.
+
+Следовательно, выбранная модель особенно интересна как точное документное представление библиотечного контракта, но не обязательно как универсальная модель для экстремально больших журналов.
+
+## 11. Implementation Plan
+
+Для практической реализации выбранной модели необходимо выполнить следующие шаги:
+
+1. Создать коллекцию `objects` с валидатором, требующим наличие полей `objectId` и `operations`.
+2. Зафиксировать внутри валидатора структуру операций в соответствии с библиотечным типом `Operation`.
+3. Добавить индексы по `objectId`, `operations.opId` и `operations.replicaId`.
+4. Подготовить генератор данных, создающий документы объектов со встроенными массивами операций.
+5. Выполнить замеры через `explain("executionStats")` для основных MongoDB-запросов.
+6. Сопоставить результаты с PostgreSQL и определить, в каких сценариях агрегатное документное хранение оказывается более или менее удачным.
+
+## 12. Planned Query Scenarios
+
+Для данной модели естественными являются следующие сценарии:
+
+- получение документа объекта по `objectId`;
+- получение полной встроенной истории конкретного объекта;
+- поиск объекта, содержащего операцию с конкретным `opId`;
+- поиск объектов, содержащих операции конкретной реплики;
+- выборка объектов, в истории которых присутствуют операции с определенным `action.type`.
+
+Эти сценарии уже отличаются от PostgreSQL-варианта: в фокусе оказывается не top-level operation log, а операции как составная часть документа объекта.
+
+## 13. Indexing Direction
+
+Для выбранной модели на текущем этапе предусмотрены следующие индексы:
+
+- уникальный индекс по `objectId`;
+- индекс по `operations.opId`;
+- индекс по `operations.replicaId`;
+- индекс по `operations.action.type`.
+
+Такой набор отражает главную особенность модели: индексируются вложенные поля встроенного массива операций, а не отдельная коллекция операций.
+
+## 14. Explain("executionStats")
+
+Для анализа использовался уже сформированный датасет в коллекции `objects`.
+
+Основные характеристики набора данных:
+
+- количество документов в `objects`: `10000`
+- минимальное число операций в документе: `12`
+- максимальное число операций в документе: `1000`
+- среднее число операций в документе: `507.7832`
+
+На основании среднего значения можно сделать вывод, что суммарное число встроенных операций в коллекции составляет приблизительно `5,077,832` записей. Это значение является выводом на основе агрегированной статистики, а не отдельного прямого счетчика.
+
+Для замеров использовались следующие репрезентативные значения:
+
+- `objectId = "event-3299"`
+- `opId = "R1:365809"`
+- `replicaId = "R5"`
+- `action.type = "field.set"`
+
+### 14.1 Find Object By objectId
+
+Команда:
+
+```javascript
+db.objects.find({ objectId: "event-3299" }).explain("executionStats")
+```
+
+Наблюдение:
+
+- используется индекс `uq_object_id`
+- план: `IXSCAN -> FETCH`
+- `totalKeysExamined = 1`
+- `totalDocsExamined = 1`
+
+Вывод:
+
+- поиск документа по `objectId` полностью поддерживается уникальным индексом и является очень эффективным;
+- для объектно-центричной модели это один из наиболее естественных и быстрых сценариев чтения.
+
+### 14.2 Read Full Embedded History For Object
+
+Команда:
+
+```javascript
+db.objects.find(
+  { objectId: "event-3299" },
+  { _id: 0, operations: 1 }
+).explain("executionStats")
+```
+
+Наблюдение:
+
+- используется индекс `uq_object_id`
+- далее выполняется чтение одного найденного документа
+- `totalKeysExamined = 1`
+- `totalDocsExamined = 1`
+- `executionTimeMillis = 2`
+
+Вывод:
+
+- получение полной истории объекта в MongoDB естественным образом сводится к чтению одного документа;
+- именно этот сценарий является одним из главных аргументов в пользу embedded-модели.
+
+### 14.3 Find Object By Embedded operations.opId
+
+Команда:
+
+```javascript
+db.objects.find(
+  { "operations.opId": "R1:365809" },
+  { _id: 0, objectId: 1 }
+).explain("executionStats")
+```
+
+Наблюдение:
+
+- используется multikey index `idx_operations_op_id`
+- план: `IXSCAN -> FETCH -> PROJECTION_SIMPLE`
+- `totalKeysExamined = 1`
+- `totalDocsExamined = 1`
+
+Вывод:
+
+- поиск объекта по встроенному `opId` работает эффективно;
+- индекс по `operations.opId` оправдан и полезен для адресации конкретной операции внутри embedded-истории.
+
+### 14.4 Find Objects By Embedded operations.replicaId
+
+Команда:
+
+```javascript
+db.objects.find(
+  { "operations.replicaId": "R5" },
+  { _id: 0, objectId: 1 }
+).limit(100).explain("executionStats")
+```
+
+Наблюдение:
+
+- используется multikey index `idx_operations_replica_id`
+- план: `IXSCAN -> FETCH -> PROJECTION_SIMPLE -> LIMIT`
+- `totalKeysExamined = 100`
+- `totalDocsExamined = 100`
+
+Вывод:
+
+- индекс по `operations.replicaId` используется корректно;
+- данный запрос уже отражает менее естественный для embedded-модели сценарий, поскольку поиск выполняется не по самому объекту, а по вложенным операциям через множество документов.
+
+### 14.5 Find Objects By Embedded operations.action.type
+
+Команда:
+
+```javascript
+db.objects.find(
+  { "operations.action.type": "field.set" },
+  { _id: 0, objectId: 1 }
+).limit(100).explain("executionStats")
+```
+
+Наблюдение:
+
+- используется multikey index `idx_operations_action_type`
+- план: `IXSCAN -> FETCH -> PROJECTION_SIMPLE -> LIMIT`
+- `totalKeysExamined = 100`
+- `totalDocsExamined = 100`
+
+Вывод:
+
+- индекс по `operations.action.type` используется и позволяет эффективно выбирать документы, содержащие операции заданного типа;
+- в document-модели индексируются не отдельные top-level операции, а вложенные элементы массивов.
+
+### 14.6 Read Last Operations By $slice
+
+Команда:
+
+```javascript
+db.objects.find(
+  { objectId: "event-3299" },
+  { _id: 0, operations: { $slice: -10 } }
+).explain("executionStats")
+```
+
+Наблюдение:
+
+- используется индекс `uq_object_id`
+- план: `IXSCAN -> FETCH -> PROJECTION_DEFAULT`
+- `totalKeysExamined = 1`
+- `totalDocsExamined = 1`
+- `executionTimeMillis = 4`
+
+Вывод:
+
+- сценарий чтения последних операций объекта также хорошо соответствует embedded-модели;
+- MongoDB позволяет получить срез встроенной истории без отдельной коллекции операций.
+
+### 14.7 Commands Used
+
+Ниже приведены основные команды, использованные для анализа:
+
+```bash
+docker exec crdt-mongodb mongosh "mongodb://root:root@127.0.0.1:27017/crdt_lab?authSource=admin" --quiet --eval "db.objects.countDocuments()"
+docker exec crdt-mongodb mongosh "mongodb://root:root@127.0.0.1:27017/crdt_lab?authSource=admin" --quiet --eval 'db.objects.aggregate([{ $project: { objectId: 1, operationCount: { $size: "$operations" } } }, { $sort: { operationCount: -1 } }, { $limit: 3 }]).toArray()'
+docker exec crdt-mongodb mongosh "mongodb://root:root@127.0.0.1:27017/crdt_lab?authSource=admin" --quiet --eval 'db.objects.aggregate([{ $group: { _id: null, minOps: { $min: { $size: "$operations" } }, maxOps: { $max: { $size: "$operations" } }, avgOps: { $avg: { $size: "$operations" } } } }]).toArray()'
+docker exec crdt-mongodb mongosh "mongodb://root:root@127.0.0.1:27017/crdt_lab?authSource=admin" --quiet --eval 'db.objects.find({ objectId: "event-3299" }).explain("executionStats")'
+docker exec crdt-mongodb mongosh "mongodb://root:root@127.0.0.1:27017/crdt_lab?authSource=admin" --quiet --eval 'db.objects.find({ objectId: "event-3299" }, { _id: 0, operations: 1 }).explain("executionStats")'
+docker exec crdt-mongodb mongosh "mongodb://root:root@127.0.0.1:27017/crdt_lab?authSource=admin" --quiet --eval 'db.objects.find({ "operations.opId": "R1:365809" }, { _id: 0, objectId: 1 }).explain("executionStats")'
+docker exec crdt-mongodb mongosh "mongodb://root:root@127.0.0.1:27017/crdt_lab?authSource=admin" --quiet --eval 'db.objects.find({ "operations.replicaId": "R5" }, { _id: 0, objectId: 1 }).limit(100).explain("executionStats")'
+docker exec crdt-mongodb mongosh "mongodb://root:root@127.0.0.1:27017/crdt_lab?authSource=admin" --quiet --eval 'db.objects.find({ "operations.action.type": "field.set" }, { _id: 0, objectId: 1 }).limit(100).explain("executionStats")'
+docker exec crdt-mongodb mongosh "mongodb://root:root@127.0.0.1:27017/crdt_lab?authSource=admin" --quiet --eval 'db.objects.find({ objectId: "event-3299" }, { _id: 0, operations: { $slice: -10 } }).explain("executionStats")'
+```
+
+## 15. Preliminary Assessment
+
+На концептуальном уровне MongoDB в выбранной модели представляет интерес именно потому, что позволяет хранить библиотечный объект и его историю в форме, близкой к исходному прикладному представлению.
+
+Однако уже на этапе проектирования виден ключевой практический компромисс:
+
+- модель хорошо соответствует объектно-центричным сценариям чтения;
+- модель хуже подходит для очень длинной истории одного объекта и для глобальных выборок по операциям через весь датасет.
+
+Поэтому ценность MongoDB в данном обзоре заключается прежде всего в сравнении двух различных способов хранения одного и того же библиотечного контракта:
+
+- PostgreSQL моделирует операции как независимые записи;
+- MongoDB моделирует историю объекта как единый документный агрегат.
+
+Результаты выполненного `explain("executionStats")` позволяют уточнить данный вывод:
+
+- MongoDB особенно сильна в сценариях `find by objectId`, чтения полной истории объекта и чтения последних операций объекта через `$slice`;
+- индексы по вложенным полям `operations.opId`, `operations.replicaId` и `operations.action.type` также работают корректно и используются planner'ом;
+- вместе с тем глобальные выборки по вложенным операциям концептуально остаются менее естественными, чем в PostgreSQL, поскольку объект, а не операция, является базовой единицей хранения.
+
+Следовательно, MongoDB в выбранной embedded-модели можно оценить как удачное решение для объектно-центричных сценариев чтения, но не как безусловно универсальную замену append-only модели, реализованной в PostgreSQL.

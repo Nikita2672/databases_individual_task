@@ -1,0 +1,21 @@
+{
+  "name": "@db-lab/mongodb-app",
+  "version": "0.0.0",
+  "private": true,
+  "description": "MongoDB integration app for generating embedded CRDT object histories",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "smoke": "tsx src/run.ts"
+  },
+  "dependencies": {
+    "@gvsem/epistyl": "file:../../../epistyl",
+    "mongodb": "^6.17.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.5",
+    "tsx": "^4.21.0",
+    "typescript": "^5.3.0"
+  }
+}
