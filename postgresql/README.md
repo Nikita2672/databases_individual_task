@@ -581,40 +581,373 @@ ORDER BY op_id;
 
 Следовательно, на текущем этапе разумно рекомендовать `READ COMMITTED` как основной рабочий уровень изоляции.
 
-## 9. EXPLAIN ANALYZE
+## 9. Implementation Plan
 
-`TODO`: prepare representative seed data before measuring query plans.
+Цель следующего этапа состоит в том, чтобы получить воспроизводимый генератор осмысленных операций для заполнения PostgreSQL и подготовить достаточно большой набор данных для последующего анализа запросов и `EXPLAIN ANALYZE`.
 
-Seed dataset expectations:
+Изначально планировалось заполнять PostgreSQL напрямую через библиотеку `@gvsem/epistyl` и обертку `Calendar.ts`, чтобы каждая запись в таблице `operations` была буквально результатом вызова библиотечного API. Этот подход удалось реализовать для небольшого smoke-сценария, но при попытке выйти на большие объемы данных проявилась существенная деградация производительности.
 
-- `TODO`: number of replicas
-- `TODO`: number of objects
-- `TODO`: number of operations
+Причина деградации состоит в текущем устройстве слоя хранения истории в библиотеке: при добавлении новых операций и особенно при merge реплик библиотека хранит и пересобирает полную историю объекта в памяти, заново выполняя дедупликацию и сортировку операций. На малых объемах это приемлемо, но при генерации сотен тысяч и миллионов операций стоимость такого подхода становится слишком высокой как по CPU, так и по памяти.
 
-`TODO`: run `EXPLAIN ANALYZE` for the key queries from section 6.
+Поэтому для задачи наполнения PostgreSQL на больших объемах был выбран более прагматичный вариант: генератор создает операции напрямую в формате, совместимом со схемой `operations`, но без materialization-пути через `Calendar.ts`.
 
-For each measured query:
+Текущий план и реализация:
 
-- `TODO`: include SQL text
-- `TODO`: include execution plan
-- `TODO`: summarize whether PostgreSQL used an index or a sequential scan
-- `TODO`: record timing and bottlenecks
-- `TODO`: note whether additional indexes or schema changes are needed
+1. Оставить PostgreSQL-схему без изменений, поскольку для хранения журнала операций она остается корректной.
+2. Генерировать осмысленные операции над календарными объектами напрямую в `postgresql/app/src/run.ts`, сохраняя реалистичные значения в `action`: `title`, `description`, `startAt`, `endAt`, `organizer`, `location`, `metadata`, `tags`, `attendees`.
+3. Поддерживать несколько логических реплик и несколько календарных объектов, чтобы данные не сводились к одной линейной истории.
+4. Выпускать операции в формате, соответствующем библиотечному контракту `Operation`: `opId`, `txId`, `objectId`, `replicaId`, `clock`, `action`.
+5. Строить векторные часы в прикладном генераторе и периодически обменивать знания между репликами, чтобы сохранялась причинная структура данных, а не только независимые линейные последовательности.
+6. Держать в памяти только легковесное текущее состояние генератора и счетчики реплик, а не полную историю всех операций по каждому объекту.
+7. Сохранять операции в PostgreSQL батчами, чтобы контролировать размер транзакций и наблюдать прогресс генерации в логах.
+8. Вынести ключевые параметры генерации в конфигурацию workload, чтобы объем данных и размер батча можно было менять без переписывания кода.
+9. Использовать полученный датасет как практическую основу для раздела `EXPLAIN ANALYZE`, поскольку он дает большой и воспроизводимый набор данных без неприемлемой деградации генератора.
 
-## 10. PostgreSQL Assessment
+Ожидаемый итог этого этапа:
 
-`TODO`: summarize PostgreSQL advantages for this CRDT workload.
+- `run.ts` генерирует большой воспроизводимый workload с осмысленными календарными операциями;
+- PostgreSQL заполняется операционным журналом в формате, совместимом с текущей схемой;
+- подготовленные данные можно использовать в следующем разделе для `EXPLAIN ANALYZE` и анализа индексов;
+- в тексте отчета явно зафиксирован практический вывод о текущем ограничении performance у библиотечного способа генерации через полную историю объекта.
 
-`TODO`: summarize PostgreSQL limitations for this CRDT workload.
+## 10. EXPLAIN ANALYZE
 
-`TODO`: assess tradeoffs between strict relational structure and `JSONB`-based flexibility.
+Для измерений использовался уже заполненный локальный датасет:
 
-`TODO`: state whether PostgreSQL currently looks like the preferred storage model and why.
+- `operations`: `1,000,000`
+- `objects`: `8`
+- `replicas`: `3`
 
-## 11. Open Questions
+Репрезентативные значения, использованные в замерах:
 
-- `DONE`: identifiers follow the library string format and are stored as `TEXT`
-- `TODO`: should action path be validated more strictly at the DB level
-- `TODO`: should vector clock remain embedded as `JSONB` or be normalized later for analysis purposes
-- `TODO`: should snapshots be introduced later as an optional optimization layer
-- `TODO`: which workload size is sufficient for `EXPLAIN ANALYZE` in the report
+- `object_id = 'event-7'` (`126,445` операций)
+- `replica_id = 'R2'` (`334,323` операций)
+- `tx_id = 'R3:tx:238257'`
+- `op_id = 'R3:238257'`
+
+Ниже приведены результаты `EXPLAIN (ANALYZE, BUFFERS)` для основных сценариев.
+
+### 10.1 Full Operation History For Object
+
+SQL:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT
+    op_id,
+    tx_id,
+    object_id,
+    replica_id,
+    clock,
+    action
+FROM operations
+WHERE object_id = 'event-7'
+ORDER BY op_id;
+```
+
+Observed plan:
+
+- `Bitmap Index Scan` on `idx_operations_object_id`
+- `Parallel Bitmap Heap Scan` on `operations`
+- затем `Gather Merge` и сортировка по `op_id`
+
+Observed behavior:
+
+- индекс по `object_id` используется;
+- основная стоимость уходит не в поиск строк по объекту, а в чтение большого числа heap pages и в сортировку результата;
+- сортировка уходит во временные файлы (`external merge`), так как история объекта велика.
+
+Timing:
+
+- execution time: `~573.7 ms`
+
+Conclusion:
+
+- индекс `idx_operations_object_id` полезен и реально работает;
+- если сортировка истории объекта по `op_id` станет одним из главных сценариев, имеет смысл рассмотреть составной индекс `(object_id, op_id)`.
+
+### 10.2 Operations For Transaction
+
+SQL:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT
+    op_id,
+    tx_id,
+    object_id,
+    replica_id,
+    clock,
+    action
+FROM operations
+WHERE tx_id = 'R3:tx:238257'
+ORDER BY op_id;
+```
+
+Observed plan:
+
+- `Index Scan` using `idx_operations_tx_id`
+- затем очень дешевая сортировка одного результата
+
+Timing:
+
+- execution time: `~0.245 ms`
+
+Conclusion:
+
+- индекс `idx_operations_tx_id` полностью оправдан;
+- запрос по одной транзакции работает очень быстро и без лишнего чтения таблицы.
+
+### 10.3 Operations Issued By Replica
+
+SQL:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT
+    op_id,
+    tx_id,
+    object_id,
+    replica_id,
+    clock,
+    action
+FROM operations
+WHERE replica_id = 'R2'
+ORDER BY op_id;
+```
+
+Observed plan:
+
+- `Parallel Seq Scan` on `operations`
+- затем `Gather Merge` и внешняя сортировка
+
+Observed behavior:
+
+- индекс `idx_operations_replica_id` не был использован;
+- причина в низкой селективности: почти треть всей таблицы принадлежит одной реплике, поэтому planner посчитал последовательное параллельное чтение выгоднее индексного доступа.
+
+Timing:
+
+- execution time: `~210.0 ms`
+
+Conclusion:
+
+- индекс `idx_operations_replica_id` существует, но на текущем распределении данных не дает преимущества для широких выборок;
+- его полезность будет выше для более редких реплик или дополнительных более селективных условий.
+
+### 10.4 Inspect Vector Clock For Operation
+
+SQL:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT
+    op_id,
+    clock
+FROM operations
+WHERE op_id = 'R3:238257';
+```
+
+Observed plan:
+
+- `Index Scan` using primary key index `operations_pkey`
+
+Timing:
+
+- execution time: `~0.213 ms`
+
+Conclusion:
+
+- поиск по `op_id` полностью закрывается первичным ключом;
+- отдельный дополнительный индекс для этого сценария не нужен.
+
+### 10.5 Insert New Operation
+
+SQL:
+
+```sql
+BEGIN;
+
+EXPLAIN (ANALYZE, BUFFERS)
+INSERT INTO operations (
+    op_id,
+    tx_id,
+    object_id,
+    replica_id,
+    clock,
+    action
+) VALUES (
+    'EXPLAIN:op:1',
+    'EXPLAIN:tx:1',
+    'event-1',
+    'R1',
+    '{"R1": 1000001}'::jsonb,
+    '{"type":"field.set","path":["title"],"value":"Explain Title"}'::jsonb
+);
+
+ROLLBACK;
+```
+
+Observed plan:
+
+- сам `INSERT` имеет почти нулевую planning cost;
+- основная стоимость видна в trigger execution на внешних ключах `operations_object_id_fkey` и `operations_replica_id_fkey`.
+
+Timing:
+
+- execution time: `~5.2 ms`
+
+Conclusion:
+
+- вставка одной операции остается быстрой;
+- заметная часть стоимости одиночной вставки связана с проверкой ссылочной целостности, а не с построением плана.
+
+### 10.6 Query Operations By Action Type
+
+Основной массовый случай:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT
+    op_id,
+    tx_id,
+    object_id,
+    replica_id,
+    action
+FROM operations
+WHERE action ->> 'type' = 'field.set'
+ORDER BY op_id;
+```
+
+Observed plan:
+
+- `Parallel Seq Scan` on `operations`
+- индекс `idx_operations_action_type` не используется
+
+Timing:
+
+- execution time: `~1004.4 ms`
+
+Reason:
+
+- `field.set` покрывает примерно `750,169` строк из `1,000,000`, поэтому planner считает индексный доступ невыгодным.
+
+Более селективный случай:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT
+    op_id,
+    tx_id,
+    object_id,
+    replica_id,
+    action
+FROM operations
+WHERE action ->> 'type' = 'set.remove'
+ORDER BY op_id;
+```
+
+Observed plan:
+
+- `Bitmap Index Scan` on `idx_operations_action_type`
+- `Parallel Bitmap Heap Scan`
+
+Timing:
+
+- execution time: `~275.4 ms`
+
+Conclusion:
+
+- индекс `idx_operations_action_type` работает, но только когда значение достаточно селективно;
+- для очень частого `field.set` PostgreSQL закономерно выбирает parallel seq scan.
+
+### 10.7 Query Operations By Payload Fragment
+
+SQL:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT
+    op_id,
+    tx_id,
+    object_id,
+    replica_id,
+    action
+FROM operations
+WHERE action @> '{"type":"field.set","path":["title"]}'::jsonb
+ORDER BY op_id;
+```
+
+Observed plan:
+
+- `Bitmap Index Scan` on `idx_operations_action_gin`
+- `Bitmap Heap Scan`
+- затем сортировка результата
+
+Timing:
+
+- execution time: `~485.2 ms`
+
+Conclusion:
+
+- GIN-индекс по `action` реально используется и полезен для containment-запросов по JSONB;
+- это подтверждает, что `idx_operations_action_gin` оправдан именно для исследовательских запросов по payload fragment, а не для фильтрации по одному только `action.type`.
+
+### 10.8 Query Operations By Clock Fragment
+
+Хотя этот запрос не входил в исходный список раздела 6, он был проверен отдельно, чтобы оценить практическую ценность `idx_operations_clock_gin`.
+
+SQL:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT
+    op_id,
+    clock
+FROM operations
+WHERE clock @> '{"R1": 1000}'::jsonb
+ORDER BY op_id
+LIMIT 100;
+```
+
+Observed plan:
+
+- `Bitmap Index Scan` on `idx_operations_clock_gin`
+- `Bitmap Heap Scan`
+
+Timing:
+
+- execution time: `~0.534 ms`
+
+Conclusion:
+
+- GIN-индекс по `clock` реально используется;
+- для containment-запросов по векторным часам он работает эффективно и не выглядит лишним.
+
+## 11. PostgreSQL Assessment
+
+PostgreSQL в текущей схеме хорошо подходит для хранения operation log, если задача состоит в надежном append-only хранении, индексируемом чтении и последующем аналитическом исследовании журнала операций.
+
+Преимущества, подтвержденные измерениями:
+
+- точечные запросы по `op_id` и `tx_id` работают очень быстро за счет B-tree индексов;
+- выборка истории одного объекта хорошо поддерживается индексом по `object_id`;
+- JSONB containment-запросы по `action` и `clock` действительно ускоряются GIN-индексами;
+- схема остается компактной и достаточно близкой к прикладной модели операции.
+
+Ограничения, выявленные на практике:
+
+- широкие выборки по низкоселективным признакам, таким как `replica_id = 'R2'` или `action_type = 'field.set'`, уходят в parallel seq scan даже при наличии индекса;
+- сортировка больших выборок по `op_id` становится заметной частью стоимости и может уходить во временные файлы;
+- вставки остаются быстрыми, но при массовой загрузке цена поддержки большого числа индексов и foreign key checks все равно накапливается.
+
+Tradeoff между реляционной структурой и `JSONB`:
+
+- реляционный каркас (`replicas`, `objects`, `operations`) хорошо фиксирует основные связи и инварианты;
+- `JSONB` дает нужную гибкость для `clock` и `action`, не заставляя преждевременно нормализовать вариативные структуры;
+- при этом аналитические запросы по JSONB остаются возможными и, как видно из `EXPLAIN ANALYZE`, действительно могут ускоряться GIN-индексами.
+
+Итоговая оценка:
+
+- PostgreSQL выглядит сильным и практичным вариантом для хранения данного CRDT workload;
+- особенно хорошо он подходит как исследовательская и референсная модель хранения immutable operation log;

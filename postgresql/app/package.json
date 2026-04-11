@@ -10,10 +10,12 @@
     "smoke": "tsx src/run.ts"
   },
   "dependencies": {
-    "@gvsem/epistyl": "file:../../.."
+    "@gvsem/epistyl": "file:../../../epistyl",
+    "pg": "^8.16.3"
   },
   "devDependencies": {
     "@types/node": "^25.3.5",
+    "@types/pg": "^8.20.0",
     "tsx": "^4.21.0",
     "typescript": "^5.3.0"
   }
