@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: crdt-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: crdt_lab
+      POSTGRES_USER: crdt
+      POSTGRES_PASSWORD: crdt
+    ports:
+      - "55432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crdt -d crdt_lab"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

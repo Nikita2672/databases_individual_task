@@ -1,0 +1,26 @@
+@startuml
+  hide circle
+  skinparam linetype ortho
+  skinparam entity {
+    BackgroundColor white
+    BorderColor black
+  }
+
+  entity "Replica" as Replica {
+    replicaId
+  }
+
+  entity "Object" as Object {
+    objectId
+  }
+
+  entity "Operation" as Operation {
+    opId
+    txId
+    clock
+    action
+  }
+
+  Replica ||--o{ Operation : issues
+  Object  ||--o{ Operation : targets
+  @enduml
