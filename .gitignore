@@ -1,1 +1,3 @@
 .idea
+mongodb/app/node_modules
+postgresql/app/node_modules
