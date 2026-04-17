@@ -1,0 +1,5 @@
+[1] findByObjectId: 5357 ms, 100000 entries
+[2] findByObjectAndReplica: 714 ms, 9957 entries
+[3] findByObjectReplicaAndTx: 136 ms, 1 entries
+[4] findByObjectIdAndPath(title): 18114 ms, 8524 entries
+[5] findByObjectIdAndPath(participants): 19152 ms, 30237 entries
