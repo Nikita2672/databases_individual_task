@@ -1,0 +1,52 @@
+\startslide
+\commonframe
+\mbox{}
+
+\begin{tikzpicture}[remember picture,overlay]
+  \slidetitle{Цель и задачи}
+
+  \node[
+    anchor=north west,
+    fill=softbg,
+    rounded corners=10pt,
+    text width=5.9cm,
+    inner xsep=0.35cm,
+    inner ysep=0.28cm,
+    align=left
+  ] at ([xshift=1.00cm,yshift=-1.95cm]current page.north west) {%
+    {\fontsize{10.4}{12.0}\selectfont
+    \textbf{Цель работы}\\[0.15cm]
+    Сравнить три способа хранения одной и той же модели CRDT-операций:
+    реляционный, документный и распределённый.}%
+  };
+
+  \node[
+    anchor=north west,
+    fill=softcyan,
+    rounded corners=10pt,
+    text width=7.0cm,
+    inner xsep=0.35cm,
+    inner ysep=0.30cm,
+    align=left
+  ] at ([xshift=7.60cm,yshift=-1.95cm]current page.north west) {%
+    {\fontsize{9.7}{11.3}\selectfont
+    \textbf{Что исследуется}\\[0.10cm]
+    Один и тот же контракт операции для прототипа коллаборативного календаря
+    с оффлайн-режимом и синхронизацией между репликами.}%
+  };
+
+  \node[anchor=north west, text=textblue] at ([xshift=1.05cm,yshift=-4.92cm]current page.north west) {%
+    {\fontsize{12.2}{13.8}\selectfont\bfseries Основные задачи}%
+  };
+
+  \node[anchor=north west, align=left, text width=13.4cm] at ([xshift=1.10cm,yshift=-5.48cm]current page.north west) {%
+    {\fontsize{9.5}{11.0}\selectfont
+    1. Описать логическую модель операции и структуру репозитория.\\
+    2. Спроектировать хранение в PostgreSQL и MongoDB.\\
+    3. Рассмотреть распределённый вариант на YTsaurus.\\
+    4. Сопоставить ограничения, индексацию и типовые запросы.\\
+    5. Сравнить результаты измерений на подготовленных датасетах.}%
+  };
+\end{tikzpicture}
+
+\footerband{2}

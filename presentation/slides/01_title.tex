@@ -1,0 +1,36 @@
+\startslide
+\commonframe
+\mbox{}
+
+\begin{tikzpicture}[remember picture,overlay]
+  \node[align=left, text width=12.8cm] at ([xshift=0.00cm,yshift=1.30cm]current page.center) {%
+    {\fontsize{16.5}{19.0}\selectfont\bfseries\color{textblue}
+    Проектирование и анализ схемы хранения\\
+    композитных объектов\\
+    на основе pure operation-based CRDT}%
+  };
+
+  \node[align=left, text width=12.4cm] at ([xshift=0.00cm,yshift=-0.55cm]current page.center) {%
+    {\fontsize{10.4}{12.0}\selectfont
+    Индивидуальное задание по дисциплине ``Базы данных и знаний''\\[0.18cm]
+    Сравнение трёх вариантов хранения одного и того же журнала операций:\\
+    \textbf{PostgreSQL}, \textbf{MongoDB}, \textbf{YTsaurus}}%
+  };
+
+  \node[anchor=west, align=left, text width=5.7cm] at ([xshift=1.20cm,yshift=1.80cm]current page.south west) {%
+    {\fontsize{10.2}{12.0}\selectfont
+    \textbf{Выполнил:} Иванов Никита Денисович\\
+    \textbf{Группа:} P4110\\
+    \textbf{Срок выполнения:} апрель 2026}%
+  };
+
+  \draw[accentcyan!60!accentblue, line width=1.2pt]
+    ([xshift=1.15cm,yshift=2.95cm]current page.south west)
+    -- ([xshift=14.85cm,yshift=2.95cm]current page.south west);
+
+  \node[anchor=east, text=accentviolet] at ([xshift=14.75cm,yshift=1.62cm]current page.south west) {%
+    {\fontsize{22}{24}\selectfont\bfseries ИТМО}%
+  };
+\end{tikzpicture}
+
+\footerband{1}

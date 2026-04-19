@@ -1,0 +1,67 @@
+\startslide
+\commonframe
+\mbox{}
+
+\begin{tikzpicture}[remember picture,overlay]
+  \slidetitle{Ключевые результаты}
+
+  \node[
+    anchor=north west,
+    fill=softbg,
+    rounded corners=10pt,
+    text width=4.20cm,
+    inner xsep=0.28cm,
+    inner ysep=0.25cm,
+    align=left
+  ] at ([xshift=0.65cm,yshift=-1.95cm]current page.north west) {%
+    {\fontsize{9.0}{10.2}\selectfont
+    \textbf{PostgreSQL}\\[0.10cm]
+    Датасет: \texttt{1,000,000} операций.\\
+    Силен в точечных и умеренно\\
+    селективных запросах.}%
+  };
+
+  \node[
+    anchor=north west,
+    fill=softrose,
+    rounded corners=10pt,
+    text width=4.20cm,
+    inner xsep=0.28cm,
+    inner ysep=0.25cm,
+    align=left
+  ] at ([xshift=5.58cm,yshift=-1.95cm]current page.north west) {%
+    {\fontsize{9.0}{10.2}\selectfont
+    \textbf{MongoDB}\\[0.10cm]
+    \texttt{10,000} документов и около \texttt{5.08} млн встроенных операций.\\
+    Лучше всего работает с полной историей объекта.}%
+  };
+
+  \node[
+    anchor=north west,
+    fill=softcyan,
+    rounded corners=10pt,
+    text width=4.20cm,
+    inner xsep=0.28cm,
+    inner ysep=0.25cm,
+    align=left
+  ] at ([xshift=10.51cm,yshift=-1.95cm]current page.north west) {%
+    {\fontsize{9.0}{10.2}\selectfont
+    \textbf{YTsaurus}\\[0.10cm]
+    Лучшие времена у запросов по префиксу ключа:\\
+    \texttt{136 ms} для поиска по\\
+    \texttt{objectId + replicaId + txId}.}%
+  };
+
+  \node[anchor=north west, text=textblue] at ([xshift=1.00cm,yshift=-4.85cm]current page.north west) {%
+    {\fontsize{11.0}{12.6}\selectfont\bfseries Что показало сравнение}%
+  };
+
+  \node[anchor=north west, align=left, text width=13.7cm] at ([xshift=1.05cm,yshift=-5.72cm]current page.north west) {%
+    {\fontsize{9.0}{10.2}\selectfont
+    • \textbf{PostgreSQL} естественен для глобального immutable operation log.\\
+    • \textbf{MongoDB} удобен для объектно-центричной истории и вложенных структур.\\
+    • \textbf{YTsaurus} выигрывает там, где запрос согласован с составным ключом.}%
+  };
+\end{tikzpicture}
+
+\footerband{7}

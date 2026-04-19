@@ -1,0 +1,70 @@
+\usepackage[T2A]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[russian]{babel}
+\usepackage[paperwidth=16cm,paperheight=9cm,margin=0cm]{geometry}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{ifthen}
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+
+\definecolor{accentblue}{RGB}{32,72,160}
+\definecolor{accentcyan}{RGB}{44,176,214}
+\definecolor{accentviolet}{RGB}{170,40,185}
+\definecolor{accentpink}{RGB}{238,88,133}
+\definecolor{textblue}{RGB}{26,43,112}
+\definecolor{softbg}{RGB}{244,248,255}
+\definecolor{softcyan}{RGB}{228,243,247}
+\definecolor{softrose}{RGB}{251,236,241}
+\definecolor{softgray}{RGB}{245,245,247}
+\definecolor{goodgreen}{RGB}{51,132,92}
+\definecolor{warnorange}{RGB}{192,120,34}
+
+\newcommand{\startslide}{%
+  \clearpage
+  \thispagestyle{empty}
+  \begin{tikzpicture}[remember picture,overlay]
+    \fill[white] (current page.south west) rectangle (current page.north east);
+  \end{tikzpicture}%
+}
+
+\newcommand{\commonframe}{%
+  \begin{tikzpicture}[remember picture,overlay]
+    \fill[accentcyan] ([xshift=0.35cm,yshift=-0.22cm]current page.north west)
+      rectangle ([xshift=5.50cm,yshift=-0.08cm]current page.north west);
+    \fill[accentviolet] ([xshift=5.50cm,yshift=-0.22cm]current page.north west)
+      rectangle ([xshift=11.55cm,yshift=-0.08cm]current page.north west);
+    \fill[accentpink] ([xshift=11.55cm,yshift=-0.22cm]current page.north west)
+      rectangle ([xshift=15.65cm,yshift=-0.08cm]current page.north west);
+
+    \draw[accentblue, line width=0.9pt]
+      ([xshift=0.35cm,yshift=0.35cm]current page.south west)
+      rectangle
+      ([xshift=-0.35cm,yshift=-0.35cm]current page.north east);
+
+    \draw[accentcyan!70!accentblue, line width=0.45pt]
+      ([xshift=0.55cm,yshift=0.55cm]current page.south west)
+      rectangle
+      ([xshift=-0.55cm,yshift=-0.55cm]current page.north east);
+  \end{tikzpicture}%
+}
+
+\newcommand{\footerband}[1]{%
+  \begin{tikzpicture}[remember picture,overlay]
+    \fill[accentblue!85!accentviolet] ([xshift=0.55cm,yshift=0.50cm]current page.south west)
+      rectangle ([xshift=15.45cm,yshift=0.92cm]current page.south west);
+    \node[anchor=west, text=white] at ([xshift=0.82cm,yshift=0.71cm]current page.south west)
+      {\fontsize{7.8}{7.8}\selectfont Проектирование и анализ схем хранения op-based CRDT};
+    \node[anchor=east, text=white] at ([xshift=15.12cm,yshift=0.71cm]current page.south west)
+      {\fontsize{7.8}{7.8}\selectfont #1};
+  \end{tikzpicture}%
+}
+
+\newcommand{\slidetitle}[1]{%
+  \node[anchor=west, text=textblue] at ([xshift=1.05cm,yshift=-1.05cm]current page.north west) {%
+    {\fontsize{20}{23}\selectfont\bfseries #1}%
+  };
+}

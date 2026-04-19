@@ -1,0 +1,45 @@
+\startslide
+\commonframe
+\mbox{}
+
+\begin{tikzpicture}[remember picture,overlay]
+  \slidetitle{Итоговый вывод}
+
+  \node[
+    anchor=north west,
+    fill=softbg,
+    rounded corners=10pt,
+    text width=13.7cm,
+    inner xsep=0.35cm,
+    inner ysep=0.30cm,
+    align=left
+  ] at ([xshift=1.00cm,yshift=-1.65cm]current page.north west) {%
+    {\fontsize{10.5}{12.4}\selectfont
+    Главное различие между рассматриваемыми решениями заключается не только в
+    выборе СУБД, но и в выборе \textbf{модели хранения одного и того же журнала операций}.}%
+  };
+
+  \node[anchor=north west, align=left, text width=13.8cm] at ([xshift=1.05cm,yshift=-3.62cm]current page.north west) {%
+    {\fontsize{10.0}{11.8}\selectfont
+    \textbf{PostgreSQL} --- лучший кандидат для глобального operation log и аналитических выборок.\\[0.12cm]
+    \textbf{MongoDB} --- естественный выбор для объектно-центричных сценариев и хранения полной истории объекта в близкой к приложению форме.\\[0.12cm]
+    \textbf{YTsaurus} --- перспективен для распределённого масштаба, но требует
+    очень аккуратного проектирования ключа и представлений под конкретные запросы.}%
+  };
+
+  \node[
+    anchor=north west,
+    fill=softcyan,
+    rounded corners=10pt,
+    text width=13.7cm,
+    inner xsep=0.35cm,
+    inner ysep=0.30cm,
+    align=left
+  ] at ([xshift=1.00cm,yshift=-6.65cm]current page.north west) {%
+    {\fontsize{10.0}{11.8}\selectfont
+    Практический вывод работы: схему хранения для op-based CRDT нужно выбирать
+    от \textbf{доминирующего паттерна чтения}, а не только от класса СУБД.}%
+  };
+\end{tikzpicture}
+
+\footerband{8}

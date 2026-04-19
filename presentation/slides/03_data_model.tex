@@ -1,0 +1,62 @@
+\startslide
+\commonframe
+\mbox{}
+
+\begin{tikzpicture}[remember picture,overlay]
+  \slidetitle{Модель данных}
+
+  \node[anchor=north west, align=left, text width=6.0cm] at ([xshift=1.00cm,yshift=-1.95cm]current page.north west) {%
+    {\fontsize{9.9}{11.5}\selectfont
+    Центральная сущность исследования --- \textbf{CRDT-операция}. Во всех трёх
+    вариантах состав данных одинаковый, различается только физическая
+    организация хранения.}%
+  };
+
+  \node[
+    anchor=north west,
+    fill=softgray,
+    rounded corners=10pt,
+    text width=6.0cm,
+    inner xsep=0.35cm,
+    inner ysep=0.28cm,
+    align=left
+  ] at ([xshift=1.00cm,yshift=-4.68cm]current page.north west) {%
+    {\fontsize{10.0}{11.6}\selectfont
+    \texttt{opId}\\
+    \texttt{txId}\\
+    \texttt{objectId}\\
+    \texttt{replicaId}\\
+    \texttt{clock}\\
+    \texttt{action}}%
+  };
+
+  \node[
+    anchor=north west,
+    fill=softcyan,
+    rounded corners=10pt,
+    text width=6.95cm,
+    inner xsep=0.38cm,
+    inner ysep=0.24cm,
+    align=left
+  ] at ([xshift=7.65cm,yshift=-1.95cm]current page.north west) {%
+    {\fontsize{9.1}{10.4}\selectfont
+    \textbf{Смысл полей}\\[0.10cm]
+    \texttt{clock} хранит причинно-следственную информацию,\\
+    \texttt{action} хранит полезную нагрузку операции.\\[0.14cm]
+    Поэтому работа сравнивает не разные данные, а разные
+    \textbf{модели представления одного operation log}.}%
+  };
+
+  \node[anchor=north west, text=textblue] at ([xshift=7.65cm,yshift=-5.58cm]current page.north west) {%
+    {\fontsize{10.2}{11.4}\selectfont\bfseries Единицы хранения}%
+  };
+
+  \node[anchor=north west, align=left, text width=6.95cm] at ([xshift=7.70cm,yshift=-5.96cm]current page.north west) {%
+    {\fontsize{9.0}{10.0}\selectfont
+    \textbf{PostgreSQL:} отдельная операция как строка таблицы.\\
+    \textbf{MongoDB:} объект как документ со встроенной историей.\\
+    \textbf{YTsaurus:} операция как строка distributed dynamic table.}%
+  };
+\end{tikzpicture}
+
+\footerband{3}
